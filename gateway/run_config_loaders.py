@@ -179,10 +179,30 @@ class GatewayConfigLoadersMixin:
         empty uses ``model.default``.
         """
         resolved_session_key = self._resolve_session_key_or_none(source, session_key)
+
         if resolved_session_key:
-            _r_state = self._peek_session_state(resolved_session_key)
-            if _r_state is not None and _r_state.conversation.reasoning_override is not None:
-                return _r_state.conversation.reasoning_override
+            # Slack DM: top-level messages may get a synthetic timestamp
+            # appended to the session key, while /reasoning stores the
+            # override on the base DM session.
+            session_keys = [resolved_session_key]
+
+            if (
+                source is not None
+                and getattr(source, "platform", None) == Platform.SLACK
+                and getattr(source, "chat_type", None) == "dm"
+            ):
+                parts = resolved_session_key.rsplit(":", 1)
+                if len(parts) == 2:
+                    session_keys.append(parts[0])
+
+            for key in session_keys:
+                state = self._peek_session_state(key)
+                if (
+                    state is not None
+                    and state.conversation.reasoning_override is not None
+                ):
+                    return state.conversation.reasoning_override
+
         return self._load_reasoning_config(model)
 
     def _set_session_reasoning_override(self, session_key: str, reasoning_config: Optional[dict]) -> None:
